@@ -1,20 +1,24 @@
 console.error('Starting');
-var fs      = require('fs');
-var path    = require ('path');
-var rasp    = require('./Functions/addRaspberryPi/server.js');
-var formidable = require('formidable');
-var pg      = require('pg');
-var Client  = require('pg').Client;
-var schema  = 'urbanfarming';
-var table   = 'livedateyo';
-var liveData = schema + "." + table;
-var cors    = require('express-cors');
-var vcapServices = require('./vcapServices');
-var conStr  = vcapServices.elephantsql[0].credentials.uri; 
-var express = require('express');
-var exphbs  = require('express-handlebars');
-var bodyParser = require('body-parser');
-var passport  = require('passport');
+var fs            = require('fs');
+var path          = require ('path');
+var rasp          = require('./Functions/addRaspberryPi/server.js');
+var formidable    = require('formidable');
+var pg            = require('pg');
+var Client        = require('pg').Client;
+var schema        = 'urbanfarming';
+var table         = 'livdateyo';
+var table1        = 'plantprojects';
+var table2        = 'users';
+var liveData      = schema + "." + table;
+var plantProjects = schema + "." + table1;
+var users         = schema + "." + table2;
+var cors          = require('express-cors');
+var vcapServices  = require('./vcapServices');
+var conStr        = vcapServices.elephantsql[0].credentials.uri; 
+var express       = require('express');
+var exphbs        = require('express-handlebars');
+var bodyParser    = require('body-parser');
+var passport      = require('passport');
 
 
 
@@ -144,10 +148,15 @@ function createTables(sql, sql1){
     });
 }
 function createSchemaAndTables(){
-    var checkSchema = "SELECT 1 FROM information_schema.tables WHERE table_schema='"+schema+"'";
-    var createLiveData = `CREATE TABLE ${liveData} (id SERIAL  PRIMARY KEY, image BYTEA , soilMoisture INTEGER, relHumidity INTEGER, temperature INTEGER, time TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() at time zone 'utc') NOT NULL, plantName VARCHAR(50), lightLuxLevel INTEGER)`;
-    var AddARowToLiveData = `INSERT INTO ${liveData} (soilMoisture, relHumidity, temperature) VALUES (100 ,100 ,100)`;
+    var checkSchema = "SELECT table_name FROM information_schema.tables WHERE table_schema='"+schema+"'";
 
+    var createLiveData = `CREATE TABLE ${liveData} (id SERIAL PRIMARY KEY, image BYTEA , soilMoisture INTEGER, relHumidity INTEGER, temperature INTEGER, time TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() at time zone 'utc') NOT NULL, lightLuxLevel INTEGER, raspID INTEGER, colour VARCHAR(8))`;
+    var AddARowToLiveData = `INSERT INTO ${liveData} (soilMoisture, relHumidity, temperature, raspID) VALUES (100 ,100 ,100, 1)`;
+    var createUser   = "CREATE TABLE " + users + " (id SERIAL PRIMARY KEY, username VARCHAR(50), passwordsalt VARCHAR(100), passwordhash VARCHAR(100)";
+    var AddRowToUser = "INSERT INTO "+ users +"(id, username, password)VALUES (1, 'urbanfarm', 'urban2016')"; 
+    
+    var createPlantProject    = "CREATE TABLE " + plantProjects + " (id SERIAL PRIMARY KEY, raspID INTEGER, userID INTEGER, plantName varchar(50), plantSpecies varchar(50), FOREIGN KEY (raspID) REFERENCES "+ liveData +"(raspID), FOREIGN KEY(userID) REFERENCES "+users+ "(id))";
+    var AddARowToPlantProject = "INSERT INTO " + plantProjects + "(raspID, userID, plantName, plantSpecies) VALUES (1, 1, 'Minty MacMintface', 'mint')";
     askDatabase(checkSchema, function(err, result){
         if (err) {
             console.error(err)
@@ -158,27 +167,36 @@ function createSchemaAndTables(){
                 if (err) {
                     console.error(err)
                 }  
-                createTables(createLiveData, AddARowToLiveData);
+
+                createTables(createLiveData,     AddARowToLiveData);
+                createTables(createUser,         AddRowToUser);
+                createTables(createPlantProject, AddARowToPlantProject);
             })
         }
         else {
-            createTables(createLiveData, AddARowToLiveData);
+                createTables(createLiveData,     AddARowToLiveData);
+                createTables(createUser,         AddRowToUser);
+                createTables(createPlantProject, AddARowToPlantProject);
         }
     })
 }
 
 function checkTablesExist(){    
-    var tableCheck = "SELECT 1 FROM information_schema.tables WHERE table_name='"+table+"' and table_schema='"+schema+"'";
+    var tableCheck = "SELECT table_name FROM information_schema.tables WHERE table_schema='"+schema+"'";
     console.log("checking tables");
     askDatabase(tableCheck, function(err, row) {
         if (err) {console.error(err)}
         console.log(row);
-        if (row.rowCount === 0 ) {
+        tables = ["", "", ""];
+        for (var n =0; n<row.rowCount ; n++){
+            tables[n] = row.rows[n].table_name;
+        }
+        if (tables.indexOf(liveData) < 0) {
             console.log("livedata doesn't exist, creating");
             createSchemaAndTables()
         }
         else {
-            console.log("livedata does exist");
+            console.log("all tables exist does exist");
         }
     });
 }
@@ -296,14 +314,14 @@ function formatImageForDB(path, response, callback){
     });
 }
 function processTextFields(fields, response, request, target){
-    var moisture =  fields.soilMoisture;
+    var moisture = fields.soilMoisture;
     var colour   = fields.colour;
     var humidity = fields.relHumidity;
     var temp     = fields.temperature;
-    var name     = (( fields.plantName== "")?  'a' : fields.plantName);
     var light    = fields.lightLuxLevel;
+    var raspID   = fields.uniqueId;
     if (target){   
-        var sql=`INSERT INTO ${liveData} (soilMoisture, relHumidity, temperature, image, plantName, lightLuxLevel, colour) VALUES ( ${moisture}, ${humidity}, ${temp}, '${target}', '${name}', ${light}, '${colour}')`;
+        var sql=`INSERT INTO ${liveData} (soilMoisture, relHumidity, temperature, image, raspId, lightLuxLevel, colour) VALUES ( ${moisture}, ${humidity}, ${temp}, '${target}', ${raspID}, ${light}, '${colour}')`;
     }
     else {
         var sql=`INSERT INTO ${liveData} (soilMoisture, relHumidity, temperature, plantName, lightLuxLevel, colour) VALUES ( ${moisture}, ${humidity}, ${temp},  '${name}', ${light}, '${colour}')`;
